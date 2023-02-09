@@ -1,5 +1,19 @@
 const mongoose = require("mongoose");
 const dotenv= require("dotenv");
+const express = require('express');
+const morgan = require('morgan');
+const routes = require('./routes/index');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet'); 
+const mongosanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
+const bodyParser = require('body-parser');
+const cors = require('cors'); 
+const cookieParser = require('cookie-parser'); 
+const session = require('cookie-session');
+const authRouter = require('./routes/auth');
+const userRouter = require('./routes/user');
+
 dotenv.config({ path: "./config.env" });
 
 process.on("uncaughtException", (err) => {
@@ -8,7 +22,57 @@ process.on("uncaughtException", (err) => {
   process.exit(1); // Exit Code 1 indicates that a container shut down, either because of an application failure.
 });
 
-const app = require("./app");
+const app = express();
+
+app.use(
+  cors({
+    origin: '*',
+    methods: ['GET', 'PATCH', 'POST', 'DELETE', 'PUT'],
+    credentials: true,
+  })
+);
+
+app.use(cookieParser());
+app.use(express.json({ limit: '10kb' })); 
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true })); 
+
+app.use(
+  session({
+    secret: 'keyboard cat',
+    proxy: true,
+    resave: true,
+    saveUnintialized: true,
+    cookie: {
+      secure: false,
+    },
+  })
+);
+app.use('/api', authRouter);
+app.use('/api', userRouter);
+
+app.use(helmet());
+
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev'));
+}
+
+const limiter = rateLimit({
+  max: 3000,
+  windowMs: 60 * 60 * 1000, // In one hour
+  message: 'Too many Requests from this IP, please try again in an hour!',
+});
+
+app.use('/tawk', limiter);
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
+app.use(mongosanitize());
+app.use(xss());
+app.use(routes);
 
 const http = require("http");
 const server = http.createServer(app);
@@ -19,15 +83,7 @@ const DB = process.env.DATABASE.replace(
   );
 
   mongoose
-    .connect(DB, {
-      // useNewUrlParser: true, // The underlying MongoDB driver has deprecated their current connection string parser. Because this is a major change, they added the useNewUrlParser flag to allow users to fall back to the old parser if they find a bug in the new parser.
-
-      // useCreateIndex: true, // Again previously MongoDB used an ensureIndex function call to ensure that Indexes exist and, if they didn't, to create one. This too was deprecated in favour of createIndex . the useCreateIndex option ensures that you are using the new function calls.
-
-      // useFindAndModify: false, // findAndModify is deprecated. Use findOneAndUpdate, findOneAndReplace or findOneAndDelete instead.
-
-      // useUnifiedTopology: true, // Set to true to opt in to using the MongoDB driver's new connection management engine. You should set this option to true , except for the unlikely case that it prevents you from maintaining a stable connection.
-    })
+    .connect(DB, {})
     .then((con) => {
       console.log("DB Connection successful");
     });
@@ -38,10 +94,10 @@ server.listen(port, () => {
   console.log(`App running on port ${port} ...`);
 });
 
-process.on("unhandledRejection", (err) => {
-  console.log(err);
-  console.log("UNHANDLED REJECTION! Shutting down ...");
-  server.close(() => {
-    process.exit(1); //  Exit Code 1 indicates that a container shut down, either because of an application failure.
-  });
-});
+// process.on("unhandledRejection", (err) => {
+//   console.log(err);
+//   console.log("UNHANDLED REJECTION! Shutting down ...");
+//   server.close(() => {
+//     process.exit(1); //  Exit Code 1 indicates that a container shut down, either because of an application failure.
+//   });
+// });

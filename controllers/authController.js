@@ -236,6 +236,7 @@ exports.forgotPassword = async (req, res, next) => {
 
   // 2) Generate the random reset token
   const resetToken = user.createPasswordResetToken();
+  console.log(resetToken)
   await user.save({ validateBeforeSave: false });
 
   // 3) Send it to user's email
@@ -267,7 +268,7 @@ exports.resetPassword = async (req, res, next) => {
     .createHash("sha256")
     .update(req.body.token)
     .digest("hex");
-
+console.log(req.body.token)
   const user = await User.findOne({
     passwordResetToken: hashedToken,
     passwordResetExpires: { $gt: Date.now() },
